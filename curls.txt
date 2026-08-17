@@ -1,0 +1,183 @@
+Stack must be up:
+  docker compose up -d
+
+If you switched authentication on (SECURITY__API_KEY), add this to every curl:
+  -H "Authorization: Bearer YOUR_TOKEN"
+
+
+--------------------------------------------------------------------
+1. IS IT UP
+--------------------------------------------------------------------
+curl localhost:8000/healthz
+
+expect: {"status":"ok"}
+
+
+--------------------------------------------------------------------
+2. UPLOAD A VIDEO
+--------------------------------------------------------------------
+curl -X POST localhost:8000/api/v1/jobs \
+  -F "file=@tests/two_speakers_en.mp4" \
+  -F "target_languages=es,fr"
+
+expect: 202 and a job_id. Copy the job_id.
+
+Tip - put it in a shell variable so the rest is copy-paste:
+JOB=paste-the-job-id-here
+
+
+--------------------------------------------------------------------
+3. STATUS  (run it a few times, takes ~30s)
+--------------------------------------------------------------------
+curl localhost:8000/api/v1/jobs/$JOB
+
+expect: status walks queued -> processing -> completed,
+        with progress_pct and every stage listed
+
+Prettier:
+curl -s localhost:8000/api/v1/jobs/$JOB | python3 -m json.tool
+
+
+--------------------------------------------------------------------
+4. LIST ALL JOBS
+--------------------------------------------------------------------
+curl "localhost:8000/api/v1/jobs?limit=10"
+
+Filter by status:
+curl "localhost:8000/api/v1/jobs?status=completed"
+
+
+--------------------------------------------------------------------
+5. TRANSCRIPT  (original language)
+--------------------------------------------------------------------
+curl -s localhost:8000/api/v1/jobs/$JOB/transcript | python3 -m json.tool
+
+expect: detected language, the speakers with their assigned voices,
+        and every segment with start/end times
+
+
+--------------------------------------------------------------------
+6. TRANSCRIPT  (translated)
+--------------------------------------------------------------------
+curl -s "localhost:8000/api/v1/jobs/$JOB/transcript?language=es" | python3 -m json.tool
+
+
+--------------------------------------------------------------------
+7. DOWNLOAD THE DUBBED VIDEO   <- the one to actually play
+--------------------------------------------------------------------
+curl -o dubbed_es.mp4 localhost:8000/api/v1/jobs/$JOB/video/es
+curl -o dubbed_fr.mp4 localhost:8000/api/v1/jobs/$JOB/video/fr
+
+Then play it:
+xdg-open dubbed_es.mp4
+
+
+--------------------------------------------------------------------
+8. DOWNLOAD SUBTITLES
+--------------------------------------------------------------------
+curl localhost:8000/api/v1/jobs/$JOB/subtitles/es
+
+Source language subtitles too:
+curl localhost:8000/api/v1/jobs/$JOB/subtitles/en
+
+Save to a file:
+curl -o subs_es.srt localhost:8000/api/v1/jobs/$JOB/subtitles/es
+
+
+--------------------------------------------------------------------
+9. PROCESSING LOG
+--------------------------------------------------------------------
+curl -s localhost:8000/api/v1/jobs/$JOB/logs | python3 -m json.tool
+
+expect: every state transition - job_created, job_dispatched,
+        stage_started / stage_completed for each stage, job_finished
+
+
+--------------------------------------------------------------------
+10. RETRY
+--------------------------------------------------------------------
+curl -i -X POST localhost:8000/api/v1/jobs/$JOB/retry
+
+expect on a finished job: 409, nothing to retry
+expect on a failed or canceled job: 202, and it resumes from the last
+       completed stage instead of starting over
+
+
+--------------------------------------------------------------------
+11. CANCEL   (upload a second job first, then cancel it mid-run)
+--------------------------------------------------------------------
+curl -X POST localhost:8000/api/v1/jobs \
+  -F "file=@tests/two_speakers_en.mp4" -F "target_languages=es"
+
+CANCEL=paste-that-new-job-id
+
+wait about 5 seconds, then:
+curl -i -X POST localhost:8000/api/v1/jobs/$CANCEL/cancel
+
+expect: 202, and the status becomes canceled
+curl localhost:8000/api/v1/jobs/$CANCEL
+
+then retry it and watch it resume:
+curl -X POST localhost:8000/api/v1/jobs/$CANCEL/retry
+
+
+--------------------------------------------------------------------
+12. VALIDATION - THESE SHOULD ALL BE REJECTED
+--------------------------------------------------------------------
+wrong file type -> 400
+curl -i -X POST localhost:8000/api/v1/jobs \
+  -F "file=@README.md;filename=x.txt" -F "target_languages=es"
+
+an .mp4 that is not really a video -> 422
+head -c 20000 /dev/urandom > /tmp/junk.mp4
+curl -i -X POST localhost:8000/api/v1/jobs \
+  -F "file=@/tmp/junk.mp4;type=video/mp4" -F "target_languages=es"
+
+bad language code -> 400
+curl -i -X POST localhost:8000/api/v1/jobs \
+  -F "file=@tests/two_speakers_en.mp4" -F "target_languages=english"
+
+unknown job -> 404
+curl -i localhost:8000/api/v1/jobs/does-not-exist
+
+
+--------------------------------------------------------------------
+13. METRICS
+--------------------------------------------------------------------
+curl -s localhost:8000/metrics | grep dubbing_
+
+Worker processing metrics are on a different port:
+curl -s localhost:9100/metrics | grep dubbing_stage
+
+
+--------------------------------------------------------------------
+14. AUTHENTICATION  (off by default)
+--------------------------------------------------------------------
+Turn it on:
+SECURITY__API_KEY=my-secret docker compose up -d
+
+Without the token -> 401
+curl -i localhost:8000/api/v1/jobs
+
+With it -> 200
+curl -i -H "Authorization: Bearer my-secret" localhost:8000/api/v1/jobs
+
+Turn it back off:
+docker compose up -d --force-recreate api
+
+
+--------------------------------------------------------------------
+IN THE BROWSER INSTEAD
+--------------------------------------------------------------------
+http://localhost:8000/docs      try any endpoint, upload through the page
+http://localhost:8000/redoc     reference-style API documentation
+
+
+--------------------------------------------------------------------
+START CLEAN AGAIN
+--------------------------------------------------------------------
+docker compose down -v
+rm -rf data/jobs
+docker compose up -d
+
+(keeps data/models, so no 1.1 GB re-download)

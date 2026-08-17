@@ -1,0 +1,40 @@
+# Runtime data: uploads, job artifacts, dubbed output, and the ~1.7GB model cache.
+# Recreated on demand; `scripts/setup.py models` refetches the models.
+data/
+
+# Secrets. .env.example is committed, .env is not.
+.env
+secrets/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Celery beat writes its schedule next to the working directory
+celerybeat-schedule*
+
+# Demo output. curls.txt tells you to run these from the repo root, so the
+# downloads land here. tests/two_speakers_en.mp4 is committed and unaffected,
+# because the leading slash anchors these to the root only.
+/dubbed_*.mp4
+/*.mp4
+/*.srt
+
+# Local screen-recording helper, not part of the deliverable
+record.sh
+
+# Editors and OS
+.vscode/
+.idea/
+.windsurf/
+*.swp
+.DS_Store
+Thumbs.db

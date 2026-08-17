@@ -1,0 +1,47 @@
+# Everything installs inside the Docker image (see Dockerfile), which pulls the
+# CPU-only torch wheel first — a bare `pip install torch` drags in ~3GB of CUDA.
+# --extra-index-url https://download.pytorch.org/whl/cpu
+
+# Web / API
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30,<1
+python-multipart>=0.0.9
+slowapi>=0.1.9
+
+# Queue — redis by default; sqs extra makes AWS SQS/ElasticMQ selectable by config
+celery[redis,sqs]>=5.4,<6
+redis>=5,<6
+boto3>=1.34            # SQS transport + optional S3 storage provider
+
+# DB / config
+sqlalchemy>=2.0,<3
+pydantic-settings>=2.4,<3
+pyyaml>=6
+
+# Observability
+structlog>=24
+prometheus-client>=0.20
+
+# Media / math
+numpy>=1.26,<2
+soundfile>=0.12
+
+# AI providers (free/local defaults)
+ctranslate2>=4.4,<5
+faster-whisper>=1.1
+argostranslate>=1.9.6
+sentencepiece>=0.2.0
+speechbrain>=1.0,<2
+scikit-learn>=1.4
+edge-tts>=7
+
+# Optional hosted providers: SDK for Claude translation (others use plain HTTP).
+# Selected by config; inert unless the matching API key is set.
+anthropic>=0.116
+
+# Postgres driver (used in docker compose; harmless locally)
+psycopg2-binary>=2.9
+
+# Tests
+pytest>=8
+httpx>=0.27

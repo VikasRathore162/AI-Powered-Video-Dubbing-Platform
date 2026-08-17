@@ -1,0 +1,137 @@
+# One stack. `docker compose up -d` runs the app on Redis + Postgres.
+#
+# The optional services below only start when you ask for their profile, and
+# the app picks them up through environment variables — swapping the queue or
+# the storage backend is configuration, never code:
+#
+#   SQS instead of Redis:
+#     docker compose --profile sqs up -d
+#     BROKER_URL='sqs://local:local@sqs:9324' docker compose --profile sqs up -d api worker
+#   RabbitMQ:      BROKER_URL='amqp://guest:guest@rabbitmq:5672//'  --profile rabbitmq
+#   S3 storage:    STORAGE=s3   --profile minio
+#   Cloud config:  CLOUD_CONFIG='aws-ssm://dubbing/'  --profile localstack
+#
+# scripts/verify.sh exercises each of these.
+x-app: &app
+  build:
+    context: .
+    args:
+      APP_UID: "${APP_UID:-1000}"     # match the host so ./data stays writable
+  image: video-dubbing:latest
+  environment: &env
+    # Postgres by default; DB_URL='sqlite:////data/app.db' runs the whole stack
+    # on the shared volume instead, with no postgres container at all.
+    DB_URL: ${DB_URL:-postgresql+psycopg2://dub:dub@postgres:5432/dubbing}
+    BROKER_URL: ${BROKER_URL:-redis://redis:6379/0}
+    BROKER_TRANSPORT_OPTIONS: '${BROKER_TRANSPORT_OPTIONS:-{}}'
+    PROVIDERS__STORAGE__NAME: ${STORAGE:-local}
+    PROVIDERS__STORAGE__OPTIONS: '${STORAGE_OPTIONS:-{"root":"/data"}}'
+    CLOUD_CONFIG: ${CLOUD_CONFIG:-}
+    AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL:-}
+    AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-minioadmin}
+    AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-minioadmin}
+    AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
+  volumes:
+    - ./data:/data                    # uploads, outputs and the model cache
+  depends_on:                         # redis is the default broker; the sqs and
+    postgres:                         # rabbitmq profiles simply leave it idle
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  api:
+    <<: *app
+    ports: ["8000:8000"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+
+  worker:
+    <<: *app
+    command: celery -A app.worker:celery_app worker -B --loglevel=INFO --concurrency=4
+    environment:
+      <<: *env
+      # prefork children write metrics here; the main process serves :9100
+      PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus-multiproc
+    ports: ["9100:9100"]
+
+  # one-off container for tests, models, fixtures and the E2E script
+  tools:
+    <<: *app
+    profiles: ["tools"]
+    volumes:
+      - ./data:/data
+      - ./tests:/srv/app/tests        # so a regenerated fixture lands on the host
+    entrypoint: []
+    command: ["pytest"]
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: dub
+      POSTGRES_PASSWORD: dub
+      POSTGRES_DB: dubbing
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dub -d dubbing"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # --- optional backends, started only with their profile --------------------
+  sqs:                                # ElasticMQ stands in for AWS SQS
+    image: softwaremill/elasticmq-native:1.5.7
+    profiles: ["sqs"]
+    healthcheck:
+      test: ["CMD", "sh", "-c", "nc -z localhost 9324"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  rabbitmq:
+    image: rabbitmq:3.13-alpine
+    profiles: ["rabbitmq"]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  minio:                              # S3-compatible object storage
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    profiles: ["minio"]
+    command: server /data
+    environment:
+      # MinIO requires >= 3 / >= 8 characters
+      MINIO_ROOT_USER: ${AWS_ACCESS_KEY_ID:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${AWS_SECRET_ACCESS_KEY:-minioadmin}
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  localstack:                         # SSM Parameter Store / Secrets Manager
+    image: localstack/localstack:3.8
+    profiles: ["localstack"]
+    environment:
+      SERVICES: ssm,secretsmanager
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  pgdata:

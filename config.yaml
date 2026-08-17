@@ -1,0 +1,46 @@
+# Sample configuration. Every key here is optional — app/config.py holds the
+# defaults, and this file only needs the ones you want to change.
+#
+# Anything in it can be overridden by an environment variable using __ for
+# nesting (LIMITS__MAX_DURATION_SEC=300), by a mounted secret, or by a cloud
+# config service. Credentials are NOT read from this file: it is committed, so
+# a key written here is dropped with a warning. See CONFIGURATION.md.
+#
+# docker-compose.yml supplies db_url / broker_url for the container network.
+
+limits:
+  max_upload_mb: 500
+  max_duration_sec: 600           # the brief's 10-minute ceiling
+  allowed_formats: [mp4, mov, avi, mkv]
+  max_concurrent_jobs: 2          # raise with worker count and cores
+
+processing:
+  max_tempo: 1.5                  # most a dub is sped up to fit its slot
+  duck_volume: 0.15               # original audio kept under the dub (0 = replace)
+  # stage_timeouts is deliberately not set here. It is a plain map, so a source
+  # REPLACES it rather than merging into the defaults — listing two stages would
+  # silently give the other five the 1800s fallback. Override it whole or not at
+  # all; app/config.py has the per-stage values.
+
+# Which AI model runs each step. Swapping a vendor is this file or an env var —
+# never code. Named alternatives per capability are listed in CONFIGURATION.md.
+providers:
+  stt:
+    name: faster_whisper
+    options: {model: small, compute_type: int8}
+  diarization:
+    name: ecapa_cluster
+    options: {distance_threshold: 0.55, min_speakers: 1, max_speakers: 8}
+  translation:
+    name: argos
+  tts:
+    name: edge
+  # storage is deliberately absent: compose sets it, and settings sources
+  # deep-merge, so defining it twice leaks local options into the S3 provider.
+
+security:
+  api_key: null                   # the bearer token; set it and every
+                                  # endpoint needs Authorization: Bearer <token>
+  rate_limit: "10/minute"
+
+log_level: INFO

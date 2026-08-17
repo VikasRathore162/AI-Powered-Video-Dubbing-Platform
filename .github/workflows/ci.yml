@@ -1,0 +1,64 @@
+name: CI
+
+# Everything runs in the same containers used locally and in production —
+# no separate CI environment to drift.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build images
+        run: docker compose build
+        env:
+          APP_UID: "1001"
+
+      - name: Start infrastructure
+        run: docker compose up -d --wait redis postgres
+
+      - name: Unit + API suite (SQLite)
+        run: docker compose run --rm -T tools pytest
+
+      - name: Same suite on Postgres
+        run: >
+          docker compose run --rm -T
+          -e TEST_DB_URL=postgresql+psycopg2://dub:dub@postgres:5432/dubbing
+          tools pytest
+
+      - name: Boot the full stack (API must come up against a real Postgres)
+        run: docker compose up -d --wait api worker
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose logs --tail 200
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
+
+  # The real models pull ~1.1GB and edge-tts needs network, so everything that
+  # dubs for real runs on demand / nightly instead of blocking every push.
+  integration:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose build
+        env:
+          APP_UID: "1001"
+      - run: docker compose up -d --wait redis postgres
+      - run: docker compose run --rm -T tools python scripts/setup.py models
+      - run: docker compose run --rm -T tools env RUN_FULL_PIPELINE=1 pytest -m integration
+      - run: docker compose up -d --wait api worker
+      - name: Black-box E2E over HTTP
+        run: docker compose run --rm -T tools python scripts/e2e.py http://api:8000
+      - if: failure()
+        run: docker compose logs --tail 200
+      - if: always()
+        run: docker compose down -v

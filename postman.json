@@ -1,0 +1,139 @@
+{
+  "info": {
+    "name": "AI Video Dubbing Platform",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Upload a video, poll status, download dubbed outputs. Set {{base_url}} and optionally {{job_id}} after upload."
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000"
+    },
+    {
+      "key": "job_id",
+      "value": ""
+    },
+    {
+      "key": "api_token",
+      "value": "",
+      "description": "security.api_key; leave blank if auth is off"
+    }
+  ],
+  "item": [
+    {
+      "name": "Upload video",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/api/v1/jobs",
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": ""
+            },
+            {
+              "key": "target_languages",
+              "value": "es,fr",
+              "type": "text"
+            },
+            {
+              "key": "source_language",
+              "value": "",
+              "type": "text",
+              "disabled": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "List jobs",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/api/v1/jobs?limit=20"
+      }
+    },
+    {
+      "name": "Job status",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/api/v1/jobs/{{job_id}}"
+      }
+    },
+    {
+      "name": "Transcript (original)",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/api/v1/jobs/{{job_id}}/transcript"
+      }
+    },
+    {
+      "name": "Transcript (translated)",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/api/v1/jobs/{{job_id}}/transcript?language=es"
+      }
+    },
+    {
+      "name": "Download dubbed video",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/api/v1/jobs/{{job_id}}/video/es"
+      }
+    },
+    {
+      "name": "Download subtitles",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/api/v1/jobs/{{job_id}}/subtitles/es"
+      }
+    },
+    {
+      "name": "Processing logs",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/api/v1/jobs/{{job_id}}/logs"
+      }
+    },
+    {
+      "name": "Retry job",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/api/v1/jobs/{{job_id}}/retry"
+      }
+    },
+    {
+      "name": "Cancel job",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/api/v1/jobs/{{job_id}}/cancel"
+      }
+    },
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/healthz"
+      }
+    },
+    {
+      "name": "Metrics",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/metrics"
+      }
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{api_token}}",
+        "type": "string"
+      }
+    ]
+  }
+}
