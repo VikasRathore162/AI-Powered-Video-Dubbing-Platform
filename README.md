@@ -19,7 +19,7 @@ downloads, fixtures and verification all execute inside containers.
 | Storage | local filesystem | **S3 / MinIO** — verified with the full E2E |
 | Queue | Redis | **AWS SQS**, **RabbitMQ** — both verified with the full E2E |
 
-Every provider named in the assignment is implemented behind one interface — adding a
+Every provider listed below is implemented behind one interface — adding a
 key and a config line is all it takes to switch. See [CONFIGURATION.md](CONFIGURATION.md).
 
 The hosted ones are contract-tested against synthetic vendor payloads (request shape,
